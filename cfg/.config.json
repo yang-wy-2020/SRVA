@@ -1,0 +1,22 @@
+{
+    "MonitorService":{
+        "cpu": "qomolo_pidstat.service",
+        "sar": "qomolo_sar_monitor.service",
+        "io": "qomolo_io_monitor.service",
+        "mem": "qomolo_mem_monitor.service",
+        "disk": "qomolo_disk_monitor.service"
+    },
+    "StartTime": "2024-09-12 10:00:55",
+    "EndTime": "2024-09-12 10:10:59",
+    "Modules": [
+        "planner",
+        "gst-launch",
+        "localization"
+    ],
+    "NetworkCard": [
+        "eth1", "eth2",
+        "bond0", "bond0.sen",
+        "ether1", "ether2",
+        "enp59s0", "wlp0s20f3"
+    ]
+}   

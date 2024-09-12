@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+echo "do postinst jobs"
+
+# system analysis config 
+cfg_path="/opt/qomolo/utils/qomolo-system-analysis/cfg"
+cfg="config.json"
+if [ ! -f "${cfg_path}/${cfg}" ];then
+    cp "${cfg_path}/.${cfg}" \
+        "${cfg_path}/${cfg}"
+fi 
+
+# necessary path
+necessary_path="/data/tmp/"
+if [ ! -d ${necessary_path} ];then
+    mkdir -p ${necessary_path}
+fi 
+
+# add exec 
+ln -s /opt/qomolo/utils/qomolo-system-analysis/qomolo-sys-analysis \
+    /usr/local/bin/qomolo-sys-analysis

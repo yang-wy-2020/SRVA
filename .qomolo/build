@@ -1,0 +1,15 @@
+echo "use local build"
+echo "ARCHITECTURE" ${PACKAGE_ARCHITECTURE}
+
+# install path 
+mkdir -p SELF_DEBIAN/opt/qomolo/utils/qomolo-system-analysis/
+
+# build cmd  #NOTE disable CGO add compatibility
+CGO_ENABLED=0 go build -a -ldflags '-extldflags "-static"' -o main main.go
+
+# arm build cmd
+# GOOS=linux GOARCH=arm GOARM=7 go build -o main main.go
+
+# copy
+cp -rv cfg SELF_DEBIAN/opt/qomolo/utils/qomolo-system-analysis/
+cp -rv main SELF_DEBIAN/opt/qomolo/utils/qomolo-system-analysis/qomolo-sys-analysis

@@ -1,0 +1,4 @@
+package gpu
+
+func GetGpuInfo() {
+}
