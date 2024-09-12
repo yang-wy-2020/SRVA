@@ -1,6 +1,14 @@
-# qomolo-system-analysis
+# System-Resouce-View-Analysis
 
 > analysis system load status
+
+## necessary path
+```bash
+necessary_path="/data/tmp/"
+if [ ! -d ${necessary_path} ];then
+    mkdir -p ${necessary_path}
+fi 
+```
 
 ## Description
 ```bash
@@ -28,13 +36,6 @@ system: sar
         sudo sar -r -u -n DEV 10
 ```
 
-## Install 
-```bash
-sudo apt update 
-sudo apt install qomolo-system-analysis -y
-bash   # 刷新环境变量
-```
-
 ## Usage 
 ```bash
 args1:
@@ -49,12 +50,7 @@ args1:
     edit
         - edit config
 e.g.
-sudo qomolo-sys-analysis $(args1)
-```
-
-## Remove
-```bash
-sudo apt remove qomolo-system-analysis -y 
+sudo main $(args1)
 ```
 
 ## Build 
@@ -64,4 +60,4 @@ CGO_ENABLED=0 go build -a -ldflags '-extldflags "-static"' -o main main.go
 
 # 交叉编译 arm版本
 CGO_ENABLED=0 GOOS=linux GOARCH=arm  go build -o main main.go
-```# SystemResourceViewAnalysis
+```

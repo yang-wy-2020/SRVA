@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-echo "do prerm jobs"
-
-cfg_path="/opt/qomolo/utils/qomolo-system-analysis/cfg/"
-necessary_path="/data/tmp/"
-
-rm -rvf ${cfg_path} ${necessary_path} || true
-
-rm /usr/local/bin/qomolo-sys-analysis || true
