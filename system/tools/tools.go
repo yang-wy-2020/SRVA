@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -16,10 +17,11 @@ import (
 	"github.com/go-echarts/go-echarts/v2/types"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/cpu"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/disk"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/io"
+	_io "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/io"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/memory"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/network"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/sar"
+	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/time"
 )
 
 func ReadConfig(_config string) Data {
@@ -61,6 +63,36 @@ func CheckPath(dir string) bool {
 	return true
 }
 
+func ensureNewlineAtEOF(filePath string) error {
+	file, err := os.OpenFile(filePath, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// 移动到文件末尾
+	_, err = file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+
+	// 读取最后一个字符
+	var buffer [1]byte
+	_, err = file.Read(buffer[:])
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	// 检查是否是换行符
+	if buffer[0] != '\n' && buffer[0] != '\r' {
+		_, err = file.WriteString("\n")
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
 func writeFile(str string, file string, Path string) string {
 	Cmd(fmt.Sprintf("sudo chown  %d:%d %s", os.Getuid(), os.Getgid(), Path))
 	f, err := os.Create(Path + file)
@@ -73,7 +105,7 @@ func writeFile(str string, file string, Path string) string {
 		_, _ = f.WriteString(str)
 	}
 	defer f.Close()
-
+	ensureNewlineAtEOF(Path + file)
 	return Path + file
 }
 func Cmd(s string) string {
@@ -131,7 +163,7 @@ func NotContainsString(slice []opts.LineData, str string) bool {
 	return true
 }
 
-func GetIoValue(i int, str string, num int, data io.IoInformation) bool {
+func GetIoValue(i int, str string, num int, data _io.IoInformation) bool {
 	var j int
 	if i+num >= len(data.Time) {
 		for j = i; j < len(data.Time); j++ {
@@ -354,6 +386,82 @@ func CreateLineChart(sys System, cfg Data) {
 			}
 			PostfixCreateChart(f, MemPerCharts, MemVszCharts, MemRssCharts)
 		}
+	case "time":
+		TimeSyncCharts := charts.NewLine()
+		TimeMonitorCharts := charts.NewLine()
+		TimeSyncCharts = PrefixCreateChart(TimeSyncCharts, "Time sync status")
+		TimeMonitorCharts = PrefixCreateChart(TimeMonitorCharts, "Time sync offset status")
+		eth1, eth2, lock_status := timeGenerateLineItems(sys.TIME)
+		for i := 0; i < len(sys.TIME.CardSyncState); i++ {
+			TimeSyncCharts.SetXAxis(sys.TIME.Time).
+				AddSeries("eth1_status", eth1).
+				AddSeries("eth2_status", eth2).
+				AddSeries("lock status", lock_status)
+		}
+		t1, eth1p2m, eth1s2p, eth1s2m, eth1_c := timeMonitorGenerateLineItems(sys.TIME, "eth1")
+		_, eth2p2m2, eth2s2p, eth2s2m, eth2_c := timeMonitorGenerateLineItems(sys.TIME, "eth2")
+		for e := 0; e < len(sys.TIME.Eth1TimeOffset); e++ {
+			TimeMonitorCharts.SetXAxis(t1).
+				AddSeries(eth1_c+"-PhcToMasterOffset", eth1p2m).
+				AddSeries(eth1_c+"-SystemToPhcOffset", eth1s2p).
+				AddSeries(eth1_c+"-SystemToMasterOffset", eth1s2m).
+				AddSeries(eth2_c+"-PhcToMasterOffset", eth2p2m2).
+				AddSeries(eth2_c+"-SystemToPhcOffset", eth2s2p).
+				AddSeries(eth2_c+"-SystemToMasterOffset", eth2s2m)
+		}
+		PostfixCreateChart(f, TimeSyncCharts, TimeMonitorCharts)
+	}
+}
+
+func timeGenerateLineItems(data time.TimeCheckInformation) ([]opts.LineData, []opts.LineData, []opts.LineData) {
+	// sync
+	eth1_sync_items := make([]opts.LineData, 0)
+	eth2_sync_items := make([]opts.LineData, 0)
+	lock_sync_items := make([]opts.LineData, 0)
+	for i := 0; i < len(data.CardSyncState); i++ {
+		eth1_sync_items = append(eth1_sync_items, opts.LineData{
+			Value: data.CardSyncState[i].Eth1SyncState})
+		eth2_sync_items = append(eth2_sync_items, opts.LineData{
+			Value: data.CardSyncState[i].Eth2SyncState})
+		lock_sync_items = append(lock_sync_items, opts.LineData{
+			Value: data.CardSyncState[i].LockState})
+	}
+	return eth1_sync_items, eth2_sync_items, lock_sync_items
+}
+func timeMonitorGenerateLineItems(data time.TimeCheckInformation, eth string) (
+	[]string, []opts.LineData, []opts.LineData, []opts.LineData, string) {
+	p2m_items := make([]opts.LineData, 0)
+	s2p_sync_items := make([]opts.LineData, 0)
+	s2m_sync_items := make([]opts.LineData, 0)
+	t := make([]string, 0)
+	if eth == "eth1" {
+		for i := 0; i < len(data.Eth1TimeOffset); i++ {
+			t = append(t, data.Eth1TimeOffset[i].Time)
+			p2m_items = append(p2m_items, opts.LineData{
+				Value: data.Eth1TimeOffset[i].PhcToMasterOffset,
+			})
+			s2p_sync_items = append(s2p_sync_items, opts.LineData{
+				Value: data.Eth1TimeOffset[i].SystemToPhcOffset,
+			})
+			s2m_sync_items = append(s2m_sync_items, opts.LineData{
+				Value: data.Eth1TimeOffset[i].SystemToMasterOffset,
+			})
+		}
+		return t, p2m_items, s2p_sync_items, s2m_sync_items, eth
+	} else {
+		for i := 0; i < len(data.Eth2TimeOffset); i++ {
+			t = append(t, data.Eth2TimeOffset[i].Time)
+			p2m_items = append(p2m_items, opts.LineData{
+				Value: data.Eth2TimeOffset[i].PhcToMasterOffset,
+			})
+			s2p_sync_items = append(s2p_sync_items, opts.LineData{
+				Value: data.Eth2TimeOffset[i].SystemToPhcOffset,
+			})
+			s2m_sync_items = append(s2m_sync_items, opts.LineData{
+				Value: data.Eth2TimeOffset[i].SystemToMasterOffset,
+			})
+		}
+		return t, p2m_items, s2p_sync_items, s2m_sync_items, eth
 	}
 }
 
@@ -483,7 +591,7 @@ func diskGenerateLineItems(data disk.DiskInformation, note1 string) ([]opts.Line
 	return items, items, items, disk_device
 }
 
-func ioGenerateLineItems(data io.IoInformation, note string, str string, num int) []opts.LineData {
+func ioGenerateLineItems(data _io.IoInformation, note string, str string, num int) []opts.LineData {
 	items := make([]opts.LineData, 0)
 	if note == "cmd" {
 		items = append(items, opts.LineData{Value: data.ProcessInfo[0].IoCmd})

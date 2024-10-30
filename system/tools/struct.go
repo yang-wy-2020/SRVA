@@ -7,6 +7,7 @@ import (
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/memory"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/network"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/sar"
+	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/time"
 )
 
 const (
@@ -22,6 +23,7 @@ type System struct {
 	NETWORK network.NetworkInformation
 	DISK    disk.DiskInformation
 	MEMORY  memory.MemoryInformation
+	TIME    time.TimeCheckInformation
 	NOTE    string
 }
 

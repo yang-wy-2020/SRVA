@@ -12,12 +12,11 @@ import (
 	_memory "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/memory"
 	_network "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/network"
 	_sar "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/sar"
+	_time "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/time"
 	_tools "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/tools"
 )
 
 const cfg string = "/opt/qomolo/utils/qomolo-system-analysis/cfg/config.json"
-
-// const cfg string = "./cfg/.config.json"
 
 var _system _tools.System
 
@@ -87,6 +86,18 @@ func makeNetwork(cfg _tools.Data) {
 	}
 }
 
+func makeTimeCheckMonitor(cfg _tools.Data) {
+	time_sync := _tools.FiltereServiceInformationCollect(
+		cfg.MonitorService["time_sync"], cfg.StartTime, cfg.EndTime, cfg.SavePath)
+	time_monitor := _tools.FiltereServiceInformationCollect(
+		cfg.MonitorService["time_monitor"], cfg.StartTime, cfg.EndTime, cfg.SavePath)
+	time_r := _time.GetTimeInformation(time_sync, time_monitor,
+		_tools.GetFileLineCount(time_sync), _tools.GetFileLineCount(time_monitor))
+	_system = _tools.System{
+		TIME: time_r,
+	}
+}
+
 func main() {
 
 	if len(os.Args) > 1 {
@@ -96,14 +107,14 @@ func main() {
 				_tools.EditConfig(cfg)
 			}
 			if argVar == "all" {
-				args = []string{"cpu", "io", "system", "disk", "network", "memory"}
+				args = []string{"cpu", "io", "system", "disk", "network", "memory", "time"}
 			}
 		}
 		if len(args) == 0 {
 			args = os.Args[1:]
 		}
 		load_cfg := _tools.ReadConfig(cfg)
-		fmt.Println(load_cfg.OutputPath)
+		log.Printf("select time:\n  %s -> %s\n", load_cfg.StartTime, load_cfg.EndTime)
 		for _, arg := range args {
 			switch arg {
 			case "cpu":
@@ -118,11 +129,12 @@ func main() {
 				makeMem(load_cfg)
 			case "network":
 				makeNetwork(load_cfg)
+			case "time":
+				makeTimeCheckMonitor(load_cfg)
 			default:
 				_tools.Usage()
 				os.Exit(1)
 			}
-			log.Printf("select time:\n  %s -> %s\n", load_cfg.StartTime, load_cfg.EndTime)
 			_system.NOTE = arg
 			_tools.CreateLineChart(_system, load_cfg)
 		}
