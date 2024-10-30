@@ -12,13 +12,17 @@ func Usage() {
         - cpu total view 
     network
         - network card view
-    disk
-        - disk monitor view
     memory
         - memory view
+    disk
+        - memory view
+    disk
+        - disk view
+    all 
+        - all resource view
     edit
         - edit config
 e.g.
-sudo qomolo-sys-analysis $(args1)
+./main $(args1)
 		`)
 }
