@@ -11,16 +11,7 @@ type SystemCpu struct {
 	Idle   float64
 }
 
-type NetworkCard struct {
-	Name  string
-	Rxpck []float64
-	Txpck []float64
-	Rxkb  []float64
-	Txkb  []float64
-}
-
 type SystemInformation struct {
-	Time         []string
-	CpuTotal     []SystemCpu
-	NetworkTotal []NetworkCard
+	Time     []string
+	CpuTotal []SystemCpu
 }

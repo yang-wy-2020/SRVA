@@ -3,7 +3,6 @@ package sar
 import (
 	"bufio"
 	"fmt"
-	"net"
 	"os"
 	"regexp"
 	"strconv"
@@ -15,24 +14,10 @@ func stringToFloat64(str string) float64 {
 	return b2
 }
 
-func checkNetworkInterface(name string) bool {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		fmt.Println("Error getting interfaces:", err)
-		return false
-	}
-	for _, intf := range interfaces {
-		if intf.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func GetSystemInformation(system_file string, fileLine int, NetCard []string) SystemInformation {
+func GetSystemInformation(system_file string, fileLine int) SystemInformation {
 	var s SystemInformation
 	currentUser, _ := os.Hostname()
-	var values, netlist []string
+	var values []string
 
 	file_buf, err := os.Open(system_file)
 	if err != nil {
@@ -41,11 +26,6 @@ func GetSystemInformation(system_file string, fileLine int, NetCard []string) Sy
 	defer file_buf.Close()
 	reader := bufio.NewReader(file_buf)
 
-	for _, intf := range NetCard {
-		if checkNetworkInterface(intf) {
-			netlist = append(netlist, intf)
-		}
-	}
 	for i := 0; i < fileLine; i++ {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -67,23 +47,6 @@ func GetSystemInformation(system_file string, fileLine int, NetCard []string) Sy
 				IoWait: stringToFloat64(values[3]),
 				Idle:   stringToFloat64(values[5]),
 			})
-		}
-		for index, intf := range netlist {
-			if strings.Contains(line, intf) {
-				pattern := fmt.Sprintf(`%s \s+ (\d+\.\d+) \s+ (\d+\.\d+) \s+ (\d+\.\d+) \s+ (\d+\.\d+) \s`, intf)
-				re := regexp.MustCompile(pattern)
-				match := re.FindStringSubmatch(line)
-				if len(match) > 1 {
-					values = match[1:]
-				}
-				s.NetworkTotal = append(s.NetworkTotal, NetworkCard{
-					Name: intf,
-				})
-				s.NetworkTotal[index].Rxpck = append(s.NetworkTotal[index].Rxpck, stringToFloat64(values[0]))
-				s.NetworkTotal[index].Txpck = append(s.NetworkTotal[index].Txpck, stringToFloat64(values[1]))
-				s.NetworkTotal[index].Rxkb = append(s.NetworkTotal[index].Rxkb, stringToFloat64(values[2]))
-				s.NetworkTotal[index].Txkb = append(s.NetworkTotal[index].Txkb, stringToFloat64(values[3]))
-			}
 		}
 	}
 	return s

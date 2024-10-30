@@ -9,8 +9,8 @@ type LoadAvgInformation struct {
 }
 
 type ProcessInformation struct {
-	Time                       string
-	CpuUse, UserUse, SystemUse float32
+	Name                       string
+	CpuUse, UserUse, SystemUse []float64
 }
 type CpuInformation struct {
 	Time        []string

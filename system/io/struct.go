@@ -11,6 +11,6 @@ type ProcessInformation struct {
 }
 
 type IoInformation struct {
-	Time        string
+	Time        []string
 	ProcessInfo []ProcessInformation
 }

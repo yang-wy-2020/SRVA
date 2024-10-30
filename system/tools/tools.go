@@ -15,6 +15,10 @@ import (
 	"github.com/go-echarts/go-echarts/v2/opts"
 	"github.com/go-echarts/go-echarts/v2/types"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/cpu"
+	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/disk"
+	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/io"
+	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/memory"
+	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/network"
 	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/sar"
 )
 
@@ -26,20 +30,51 @@ func ReadConfig(_config string) Data {
 	} else {
 		err = json.Unmarshal(content, &SelectTime)
 		if err != nil {
-			log.Fatal("Error during Unmarshal(): ", err)
+			log.Fatal("check: ", _config, "Error during Unmarshal(): ", err)
 		}
 	}
 	return SelectTime
 }
-func writeFile(str string, file string) string {
-	f, err := os.Create(output + file)
+
+func FileIsEmpty(filepath string) bool {
+	data, err := ioutil.ReadFile(filepath)
 	if err != nil {
-		fmt.Println(err.Error())
+		if os.IsNotExist(err) {
+			return true
+		}
+		return false
+	}
+	return len(data) == 0
+}
+
+func CheckPath(dir string) bool {
+	_, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		// 创建目录，权限设置为0755
+		err := os.MkdirAll(dir, 0755)
+		if err != nil {
+			fmt.Println("创建目录失败:", err)
+			return false
+		}
+		fmt.Println("目录已创建:", dir)
+	}
+	return true
+}
+
+func writeFile(str string, file string, Path string) string {
+	Cmd(fmt.Sprintf("sudo chown  %d:%d %s", os.Getuid(), os.Getgid(), Path))
+	f, err := os.Create(Path + file)
+	if err != nil {
+		log.Fatal(err.Error())
 	} else {
+		if len(str) < effectiveNumber {
+			return Path + file
+		}
 		_, _ = f.WriteString(str)
 	}
 	defer f.Close()
-	return output + file
+
+	return Path + file
 }
 func Cmd(s string) string {
 	cmd := exec.Command("/bin/bash", "-c", s)
@@ -55,11 +90,11 @@ func Cmd(s string) string {
 	return Str
 }
 
-func FiltereServiceInformationCollect(service_name, s_time, e_time string) string {
+func FiltereServiceInformationCollect(service_name, s_time, e_time string, savePath string) string {
 	cmd := fmt.Sprintf("sudo %s -u %s --since '%s' --until '%s'",
 		journal, service_name, s_time, e_time)
 	ret := Cmd(cmd)
-	return writeFile(ret, service_name)
+	return writeFile(ret, service_name, savePath)
 }
 
 func EditConfig(config string) {
@@ -69,23 +104,77 @@ func EditConfig(config string) {
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()
 	if err != nil {
-		fmt.Println("err start Vim:", err)
+		log.Fatal("err start Vim:", err)
 		return
 	}
 	editedText, err := ioutil.ReadFile(config)
 	if err != nil {
-		fmt.Println("err read file:", err)
+		log.Fatal("err read file:", err)
 		return
 	}
 	fmt.Println("edit after:")
 	fmt.Println(string(editedText))
+	var SelectTime Data
+	err = json.Unmarshal(editedText, &SelectTime)
+	if err != nil {
+		fmt.Println("\x1b[31mcheck: ", config, "Error during Unmarshal(): ", err, "\x1b[0m")
+	}
 	os.Exit(-1)
 }
 
+func NotContainsString(slice []opts.LineData, str string) bool {
+	for _, item := range slice {
+		if item.Value.(string) == str {
+			return false
+		}
+	}
+	return true
+}
+
+func GetIoValue(i int, str string, num int, data io.IoInformation) bool {
+	var j int
+	if i+num >= len(data.Time) {
+		for j = i; j < len(data.Time); j++ {
+			if data.ProcessInfo[j].IoCmd == str && data.Time[j] == data.Time[i] {
+				return true
+			}
+		}
+		return false
+	}
+	for j = i; j < i+num; j++ {
+		if data.ProcessInfo[j].IoCmd == str && data.Time[j] == data.Time[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func GetMemValue(i int, str string, num int, data memory.MemoryInformation) bool {
+	var j int
+	if i+num >= len(data.Time) {
+		for j = i; j < len(data.Time); j++ {
+			if data.ProcessInfo[j].MemoryCmd == str && data.Time[j] == data.Time[i] {
+				return true
+			}
+		}
+		return false
+	}
+	for j = i; j < i+num; j++ {
+		if data.ProcessInfo[j].MemoryCmd == str && data.Time[j] == data.Time[i] {
+			return true
+		}
+	}
+	return false
+}
+
 func GetFileLineCount(filepath string) int {
+	if FileIsEmpty(filepath) {
+		log.Println("file is empty: ", filepath)
+		os.Exit(1)
+	}
 	file, err := os.Open(filepath)
 	if err != nil {
-		fmt.Println("Error opening file:", err)
+		log.Fatal("Error opening file:", err)
 		return -1
 	}
 	defer file.Close()
@@ -102,162 +191,175 @@ func GetFileLineCount(filepath string) int {
 	return lineCount
 }
 
-func CreateLineChart(sys System) {
+func PrefixCreateChart(_charts *charts.Line, description string) *charts.Line {
+	_charts.SetGlobalOptions(
+		charts.WithInitializationOpts(opts.Initialization{
+			Width:  chartsWidth,            // 设置图表宽度
+			Height: chartsHeight,           // 设置图表高度
+			Theme:  types.ThemeInfographic, // 确保 ThemeInfographic 是有效的主题
+		}),
+		charts.WithTitleOpts(opts.Title{
+			Title: description,
+			// Subtitle: "",
+		}),
+		charts.WithDataZoomOpts(opts.DataZoom{
+			// 启用数据窗口组件，设置x轴可以缩放
+			XAxisIndex: []int{0},
+		}),
+	)
+	return _charts
+}
 
-	f, err := os.Create(fmt.Sprintf("%s.html", sys.NOTE))
+func PostfixCreateChart(f *os.File, charts ...*charts.Line) {
+	for _, chart := range charts {
+		err := chart.Render(f)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func CreateLineChart(sys System, cfg Data) {
+	if !CheckPath(cfg.OutputPath) {
+		fmt.Println(cfg.OutputPath + "is not exist!!")
+	}
+	f, err := os.Create(cfg.OutputPath + fmt.Sprintf("%s.html", sys.NOTE))
 	if err != nil {
 		panic(err)
 	}
 	defer f.Close()
-
 	switch sys.NOTE {
 	case "cpu":
 		LoadCharts := charts.NewLine()
-		LoadCharts.SetGlobalOptions(
-			charts.WithInitializationOpts(opts.Initialization{
-				Width:  chartsWidth,            // 设置图表宽度
-				Height: chartsHeight,           // 设置图表高度
-				Theme:  types.ThemeInfographic, // 确保 ThemeInfographic 是有效的主题
-			}),
-			charts.WithTitleOpts(opts.Title{
-				Title: "LoadAvg 1m, 5m, 15m",
-				// Subtitle: "",
-			}),
-			charts.WithDataZoomOpts(opts.DataZoom{
-				// 启用数据窗口组件，设置x轴可以缩放
-				XAxisIndex: []int{0},
-			}),
-		)
-
+		LoadCharts = PrefixCreateChart(LoadCharts, "LoadAvg 1m, 5m, 15m")
+		one, five, fifteem := cpuLoadAvgGenerateLineItems(sys.CPU)
 		LoadCharts.SetXAxis(sys.CPU.Time).
-			AddSeries("LoadAvg 1m", cpuGenerateLineItems(sys.CPU, "one")).
-			AddSeries("LoadAvg 5m", cpuGenerateLineItems(sys.CPU, "five")).
-			AddSeries("LoadAvg 15m", cpuGenerateLineItems(sys.CPU, "fifteen"))
-
-		err = LoadCharts.Render(f)
-		if err != nil {
-			panic(err)
-		}
+			AddSeries("LoadAvg 1m", one).AddSeries("LoadAvg 5m", five).AddSeries("LoadAvg 15m", fifteem)
 
 		RateAndCoreCharts := charts.NewLine()
-		RateAndCoreCharts.SetGlobalOptions(
-			charts.WithInitializationOpts(opts.Initialization{
-				Width:  chartsWidth,
-				Height: chartsHeight,
-				Theme:  types.ThemeInfographic,
-			}),
-			charts.WithTitleOpts(opts.Title{
-				Title: "Cpu rate and core",
-			}),
-			charts.WithDataZoomOpts(opts.DataZoom{
-				// 启用数据窗口组件，设置x轴可以缩放
-				XAxisIndex: []int{0},
-			}),
-		)
+		RateAndCoreCharts = PrefixCreateChart(RateAndCoreCharts, "Cpu Rate And Core")
 		RateAndCoreCharts.SetXAxis(sys.CPU.Time).
-			AddSeries("Cpu rate", cpuGenerateLineItems(sys.CPU, "rate")).
-			AddSeries("Cpu core", cpuGenerateLineItems(sys.CPU, "core"))
+			AddSeries("Cpu rate", cpuGenerateLineItems(sys.CPU, "rate", 0)).
+			AddSeries("Cpu core", cpuGenerateLineItems(sys.CPU, "core", 0))
 
-		err = RateAndCoreCharts.Render(f)
-		if err != nil {
-			panic(err)
+		ProcessCharts := charts.NewLine()
+		ProcessCharts = PrefixCreateChart(ProcessCharts, "Cpu Process Info")
+		for i := 0; i < len(sys.CPU.ProcessInfo); i++ {
+			ProcessCharts.SetXAxis(sys.CPU.Time).
+				AddSeries(sys.CPU.ProcessInfo[i].Name+"-CpuUse", cpuGenerateLineItems(sys.CPU, "CpuUse", i)).
+				AddSeries(sys.CPU.ProcessInfo[i].Name+"-SystemUse", cpuGenerateLineItems(sys.CPU, "SystemUse", i)).
+				AddSeries(sys.CPU.ProcessInfo[i].Name+"-UserUse", cpuGenerateLineItems(sys.CPU, "UserUse", i))
 		}
+		PostfixCreateChart(f, LoadCharts, RateAndCoreCharts, ProcessCharts)
 	case "io":
 		{
-			fmt.Println("io view")
+			IoWrCharts := charts.NewLine()
+			IoWrCharts = PrefixCreateChart(IoWrCharts, "Disk Write Io Rate")
+
+			IoRdCharts := charts.NewLine()
+			IoRdCharts = PrefixCreateChart(IoRdCharts, "Disk Read Io Rate")
+			if len(sys.IO.ProcessInfo) == 0 {
+				fmt.Println("NO IO DATA")
+				os.Exit(0)
+			}
+			cmd_items := ioGenerateLineItems(sys.IO, "cmd", "0", 0)
+			time_items := ioGenerateLineItems(sys.IO, "time", "0", 0)
+			len_cmd := len(cmd_items)
+			for i := 0; i < len_cmd; i++ {
+				io_cmd := cmd_items[i].Value.(string)
+				io_items := ioGenerateLineItems(sys.IO, "wr", io_cmd, len_cmd)
+				IoWrCharts.SetXAxis(time_items).
+					AddSeries(io_cmd+"-wr", io_items)
+
+				io_items = ioGenerateLineItems(sys.IO, "rd", io_cmd, len_cmd)
+				IoRdCharts.SetXAxis(time_items).
+					AddSeries(io_cmd+"-rd", io_items)
+			}
+			PostfixCreateChart(f, IoWrCharts, IoRdCharts)
 		}
 	case "system":
 		{
-			LoadCharts := charts.NewLine()
-			LoadCharts.SetGlobalOptions(
-				charts.WithInitializationOpts(opts.Initialization{
-					Width:  chartsWidth,            // 设置图表宽度
-					Height: chartsHeight,           // 设置图表高度
-					Theme:  types.ThemeInfographic, // 确保 ThemeInfographic 是有效的主题
-				}),
-				charts.WithTitleOpts(opts.Title{
-					Title: "CPU TOTAL INFORMATION",
-					// Subtitle: "",
-				}),
-				charts.WithDataZoomOpts(opts.DataZoom{
-					// 启用数据窗口组件，设置x轴可以缩放
-					XAxisIndex: []int{0},
-				}),
-			)
+			SystemTotalCharts := charts.NewLine()
+			SystemTotalCharts = PrefixCreateChart(SystemTotalCharts, "Cpu Total Information")
+			SystemTotalCharts.SetXAxis(sys.SYSTEM.Time).
+				AddSeries("User", systemGenerateLineItems(sys.SYSTEM, "user")).
+				AddSeries("System", systemGenerateLineItems(sys.SYSTEM, "system")).
+				AddSeries("Idle", systemGenerateLineItems(sys.SYSTEM, "idle"))
+			PostfixCreateChart(f, SystemTotalCharts)
 
-			LoadCharts.SetXAxis(sys.SYSTEM.Time).
-				AddSeries("User", systemGenerateLineItems(sys.SYSTEM, "user", 0)).
-				AddSeries("System", systemGenerateLineItems(sys.SYSTEM, "system", 0)).
-				AddSeries("Idle", systemGenerateLineItems(sys.SYSTEM, "idle", 0))
-
-			// TODO network card view
+		}
+	case "network":
+		{
 			NetwrodCardCharts := charts.NewLine()
-			NetwrodCardCharts.SetGlobalOptions(
-				charts.WithInitializationOpts(opts.Initialization{
-					Width:  chartsWidth,
-					Height: chartsHeight,
-					Theme:  types.ThemeInfographic,
-				}),
-				charts.WithTitleOpts(opts.Title{
-					Title: "NetWork Card view",
-				}),
-				charts.WithDataZoomOpts(opts.DataZoom{
-					// 启用数据窗口组件，设置x轴可以缩放
-					XAxisIndex: []int{0},
-				}),
-			)
-			for i := 0; i < len(sys.SYSTEM.NetworkTotal); i++ {
-				NetwrodCardCharts.SetXAxis(sys.SYSTEM.Time).
-					AddSeries(sys.SYSTEM.NetworkTotal[i].Name+"-Rxp", systemGenerateLineItems(sys.SYSTEM, "rxp", i)).
-					AddSeries(sys.SYSTEM.NetworkTotal[i].Name+"-Txp", systemGenerateLineItems(sys.SYSTEM, "txp", i)).
-					AddSeries(sys.SYSTEM.NetworkTotal[i].Name+"-Rx", systemGenerateLineItems(sys.SYSTEM, "rx", i)).
-					AddSeries(sys.SYSTEM.NetworkTotal[i].Name+"-Tx", systemGenerateLineItems(sys.SYSTEM, "tx", i))
-			}
+			NetwrodCardCharts = PrefixCreateChart(NetwrodCardCharts, "NetWork Card Rx/Tx View")
 
-			err = NetwrodCardCharts.Render(f)
-			if err != nil {
-				panic(err)
+			for i := 0; i < len(sys.NETWORK.NetCard); i++ {
+				if len(sys.NETWORK.NetCard[i].NetworkTotal) == 0 {
+					continue
+				}
+				rxp, txp, rx, tx := networkGenerateLineItems(sys.NETWORK, i)
+				NetwrodCardCharts.SetXAxis(sys.NETWORK.NetCard[i].Time).
+					AddSeries(sys.NETWORK.NetCard[i].Name+"-Rxp", rxp).
+					AddSeries(sys.NETWORK.NetCard[i].Name+"-Txp", txp).
+					AddSeries(sys.NETWORK.NetCard[i].Name+"-Rx", rx).
+					AddSeries(sys.NETWORK.NetCard[i].Name+"-Tx", tx)
 			}
-			err = LoadCharts.Render(f)
-			if err != nil {
-				panic(err)
+			PostfixCreateChart(f, NetwrodCardCharts)
+		}
+	case "disk":
+		{
+			NvmeCharts := charts.NewLine()
+			NvmeCharts = PrefixCreateChart(NvmeCharts, "Nvme Used View")
+			time_items, used_items, free_items, disk_device := diskGenerateLineItems(sys.DISK, "nvme0n1p1")
+			NvmeCharts.SetXAxis(time_items).
+				AddSeries(disk_device+"-Used", used_items).
+				AddSeries(disk_device+"-Free", free_items)
+			PostfixCreateChart(f, NvmeCharts)
+
+			time_items, used_items, free_items, disk_device = diskGenerateLineItems(sys.DISK, "root")
+			RootCharts := charts.NewLine()
+			RootCharts = PrefixCreateChart(RootCharts, "SysDisk Used View")
+			RootCharts.SetXAxis(time_items).
+				AddSeries(disk_device+"-Used", used_items).
+				AddSeries(disk_device+"-Free", free_items)
+			PostfixCreateChart(f, RootCharts)
+		}
+	case "memory":
+		{
+			MemPerCharts := charts.NewLine()
+			MemPerCharts = PrefixCreateChart(MemPerCharts, "mem percent")
+
+			MemVszCharts := charts.NewLine()
+			MemVszCharts = PrefixCreateChart(MemVszCharts, "mem VirtualMemorySize")
+
+			MemRssCharts := charts.NewLine()
+			MemRssCharts = PrefixCreateChart(MemRssCharts, "mem ResidentSetSize")
+
+			cmd_items := memGenerateLineItems(sys.MEMORY, "cmd", "0", 0)
+			time_items := memGenerateLineItems(sys.MEMORY, "time", "0", 0)
+			len_cmd := len(cmd_items)
+			for i := 0; i < len_cmd; i++ {
+				mem_cmd := cmd_items[i].Value.(string)
+				mem_items := memGenerateLineItems(sys.MEMORY, "percent", mem_cmd, len_cmd)
+				MemPerCharts.SetXAxis(time_items).
+					AddSeries(mem_cmd+"-percent", mem_items)
+
+				mem_items = memGenerateLineItems(sys.MEMORY, "vsz", mem_cmd, len_cmd)
+				MemVszCharts.SetXAxis(time_items).
+					AddSeries(mem_cmd+"-vsz", mem_items)
+
+				mem_items = memGenerateLineItems(sys.MEMORY, "rss", mem_cmd, len_cmd)
+				MemRssCharts.SetXAxis(time_items).
+					AddSeries(mem_cmd+"-vsz", mem_items)
 			}
+			PostfixCreateChart(f, MemPerCharts, MemVszCharts, MemRssCharts)
 		}
 	}
-
 }
 
-func systemGenerateLineItems(data sar.SystemInformation, note string, index int) []opts.LineData {
+func systemGenerateLineItems(data sar.SystemInformation, note string) []opts.LineData {
 	var value interface{}
 	items := make([]opts.LineData, 0)
-	if note == "rxp" {
-		Ncard_items := make([]opts.LineData, 0)
-		for _, Ncard := range data.NetworkTotal[index].Rxpck {
-			Ncard_items = append(Ncard_items, opts.LineData{Value: Ncard})
-		}
-		return Ncard_items
-	}
-	if note == "txp" {
-		Ncard_items := make([]opts.LineData, 0)
-		for _, Ncard := range data.NetworkTotal[index].Txpck {
-			Ncard_items = append(Ncard_items, opts.LineData{Value: Ncard})
-		}
-		return Ncard_items
-	}
-	if note == "rx" {
-		Ncard_items := make([]opts.LineData, 0)
-		for _, Ncard := range data.NetworkTotal[index].Rxkb {
-			Ncard_items = append(Ncard_items, opts.LineData{Value: Ncard})
-		}
-		return Ncard_items
-	}
-	if note == "tx" {
-		Ncard_items := make([]opts.LineData, 0)
-		for _, Ncard := range data.NetworkTotal[index].Txkb {
-			Ncard_items = append(Ncard_items, opts.LineData{Value: Ncard})
-		}
-		return Ncard_items
-	}
 
 	for i := 0; i < len(data.CpuTotal); i++ {
 		if note == "user" {
@@ -275,38 +377,250 @@ func systemGenerateLineItems(data sar.SystemInformation, note string, index int)
 	return items
 }
 
-func cpuGenerateLineItems(data cpu.CpuInformation, note string) []opts.LineData {
-	var rate, value, core interface{}
+func networkGenerateLineItems(data network.NetworkInformation, index int) (
+	[]opts.LineData, []opts.LineData, []opts.LineData, []opts.LineData) {
+	rxp_items := make([]opts.LineData, 0)
+	txp_items := make([]opts.LineData, 0)
+	rx_items := make([]opts.LineData, 0)
+	tx_items := make([]opts.LineData, 0)
+	for _, Ncard := range data.NetCard[index].NetworkTotal {
+		rxp_items = append(rxp_items, opts.LineData{Value: Ncard.Rxpck})
+		txp_items = append(txp_items, opts.LineData{Value: Ncard.Txpck})
+		rx_items = append(rx_items, opts.LineData{Value: Ncard.Rxkb})
+		tx_items = append(tx_items, opts.LineData{Value: Ncard.Txkb})
+	}
+	return rxp_items, txp_items, rx_items, tx_items
+}
 
+func cpuGenerateLineItems(data cpu.CpuInformation, note string, index int) []opts.LineData {
+	if note == "CpuUse" {
+		cpu_items := make([]opts.LineData, 0)
+		for _, use := range data.ProcessInfo[index].CpuUse {
+			cpu_items = append(cpu_items, opts.LineData{Value: use})
+		}
+		return cpu_items
+	}
+	if note == "SystemUse" {
+		system_items := make([]opts.LineData, 0)
+		for _, use := range data.ProcessInfo[index].SystemUse {
+			system_items = append(system_items, opts.LineData{Value: use})
+		}
+		return system_items
+	}
+	if note == "UserUse" {
+		user_items := make([]opts.LineData, 0)
+		for _, use := range data.ProcessInfo[index].UserUse {
+			user_items = append(user_items, opts.LineData{Value: use})
+		}
+		return user_items
+	}
 	if note == "rate" {
 		rate_items := make([]opts.LineData, 0)
 		for i := 0; i < len(data.Rate); i++ {
-			rate = data.Rate[i]
-			rate_items = append(rate_items, opts.LineData{Value: rate})
+			rate_items = append(rate_items, opts.LineData{Value: data.Rate[i]})
 		}
 		return rate_items
 	}
-
 	if note == "core" {
 		core_items := make([]opts.LineData, 0)
 		for i := 0; i < len(data.CpuCore); i++ {
-			core = data.CpuCore[i]
-			core_items = append(core_items, opts.LineData{Value: core})
+			core_items = append(core_items, opts.LineData{Value: data.CpuCore[i]})
 		}
 		return core_items
 	}
-	items := make([]opts.LineData, 0)
+	return nil
+}
+
+func cpuLoadAvgGenerateLineItems(data cpu.CpuInformation) (
+	[]opts.LineData, []opts.LineData, []opts.LineData) {
+
+	One_items := make([]opts.LineData, 0)
+	Five_items := make([]opts.LineData, 0)
+	Fifteen_items := make([]opts.LineData, 0)
 	for i := 0; i < len(data.LoadAvg); i++ {
-		if note == "one" {
-			value = data.LoadAvg[i].AvgOne
+		One_items = append(One_items, opts.LineData{Value: data.LoadAvg[i].AvgOne})
+		Five_items = append(Five_items, opts.LineData{Value: data.LoadAvg[i].AvgFive})
+		Fifteen_items = append(Fifteen_items, opts.LineData{Value: data.LoadAvg[i].AvgFifteen})
+	}
+	return One_items, Five_items, Fifteen_items
+}
+
+func diskGenerateLineItems(data disk.DiskInformation, note1 string) ([]opts.LineData, []opts.LineData, []opts.LineData, string) {
+	var disk_device string
+	if note1 == "nvme0n1p1" {
+		time_items := make([]opts.LineData, 0)
+		used_items := make([]opts.LineData, 0)
+		free_items := make([]opts.LineData, 0)
+		for i := 0; i < len(data.DiskInfo); i++ {
+			if data.DiskInfo[i].DiskDevice == "/dev/nvme0n1p1" {
+				if NotContainsString(time_items, data.Time[i]) {
+					time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+				}
+				used_items = append(used_items, opts.LineData{Value: data.DiskInfo[i].DiskUsed})
+				free_items = append(free_items, opts.LineData{Value: data.DiskInfo[i].DiskFree})
+				disk_device = data.DiskInfo[i].DiskDevice
+			}
 		}
-		if note == "five" {
-			value = data.LoadAvg[i].AvgFive
+		return time_items, used_items, free_items, disk_device
+	}
+	if note1 == "root" {
+		time_items := make([]opts.LineData, 0)
+		used_items := make([]opts.LineData, 0)
+		free_items := make([]opts.LineData, 0)
+		for i := 0; i < len(data.DiskInfo); i++ {
+			if data.DiskInfo[i].DiskDevice != "/dev/nvme0n1p1" {
+				if NotContainsString(time_items, data.Time[i]) {
+					time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+				}
+				used_items = append(used_items, opts.LineData{Value: data.DiskInfo[i].DiskUsed})
+				free_items = append(free_items, opts.LineData{Value: data.DiskInfo[i].DiskFree})
+				disk_device = data.DiskInfo[i].DiskDevice
+			}
 		}
-		if note == "fifteen" {
-			value = data.LoadAvg[i].AvgFifteen
+		return time_items, used_items, free_items, disk_device
+	}
+	items := make([]opts.LineData, 0)
+	return items, items, items, disk_device
+}
+
+func ioGenerateLineItems(data io.IoInformation, note string, str string, num int) []opts.LineData {
+	items := make([]opts.LineData, 0)
+	if note == "cmd" {
+		items = append(items, opts.LineData{Value: data.ProcessInfo[0].IoCmd})
+		for i := 0; i < len(data.ProcessInfo); i++ {
+			str := data.ProcessInfo[i].IoCmd
+			if NotContainsString(items, str) {
+				items = append(items, opts.LineData{Value: str})
+			}
 		}
-		items = append(items, opts.LineData{Value: value})
+	}
+	if note == "time" {
+		items = append(items, opts.LineData{Value: data.Time[0]})
+		for i := 0; i < len(data.Time); i++ {
+			str := data.Time[i]
+			if NotContainsString(items, str) {
+				items = append(items, opts.LineData{Value: str})
+			}
+		}
+	}
+	i := 0
+	time_items := make([]opts.LineData, 0)
+	if note == "wr" {
+		for {
+			if i < len(data.ProcessInfo) {
+				if data.ProcessInfo[i].IoCmd == str {
+					items = append(items, opts.LineData{Value: data.ProcessInfo[i].WriteKbSec})
+					time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+				} else {
+					get_value := GetIoValue(i, str, num, data)
+					if !get_value && NotContainsString(time_items, data.Time[i]) {
+						items = append(items, opts.LineData{Value: 0})
+						time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+					}
+				}
+				i++
+			} else {
+				break
+			}
+		}
+	}
+	if note == "rd" {
+		for {
+			if i < len(data.ProcessInfo) {
+				if data.ProcessInfo[i].IoCmd == str {
+					items = append(items, opts.LineData{Value: data.ProcessInfo[i].ReadKbSec})
+					time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+				} else {
+					get_value := GetIoValue(i, str, num, data)
+					if !get_value && NotContainsString(time_items, data.Time[i]) {
+						items = append(items, opts.LineData{Value: 0})
+						time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+					}
+				}
+				i++
+			} else {
+				break
+			}
+		}
+	}
+	return items
+}
+
+func memGenerateLineItems(data memory.MemoryInformation, note string, str string, num int) []opts.LineData {
+	items := make([]opts.LineData, 0)
+	if note == "cmd" {
+		items = append(items, opts.LineData{Value: data.ProcessInfo[0].MemoryCmd})
+		for i := 0; i < len(data.ProcessInfo); i++ {
+			str := data.ProcessInfo[i].MemoryCmd
+			if NotContainsString(items, str) {
+				items = append(items, opts.LineData{Value: str})
+			}
+		}
+	}
+	if note == "time" {
+		items = append(items, opts.LineData{Value: data.Time[0]})
+		for i := 0; i < len(data.Time); i++ {
+			str := data.Time[i]
+			if NotContainsString(items, str) {
+				items = append(items, opts.LineData{Value: str})
+			}
+		}
+	}
+	i := 0
+	time_items := make([]opts.LineData, 0)
+	if note == "percent" {
+		for {
+			if i < len(data.ProcessInfo) {
+				if data.ProcessInfo[i].MemoryCmd == str {
+					items = append(items, opts.LineData{Value: data.ProcessInfo[i].MemoryPercentage})
+				} else {
+					get_value := GetMemValue(i, str, num, data)
+					if !get_value && NotContainsString(time_items, data.Time[i]) {
+						items = append(items, opts.LineData{Value: 0})
+					}
+				}
+				time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+				i++
+			} else {
+				break
+			}
+		}
+	}
+	if note == "vsz" {
+		for {
+			if i < len(data.ProcessInfo) {
+				if data.ProcessInfo[i].MemoryCmd == str {
+					items = append(items, opts.LineData{Value: data.ProcessInfo[i].VirtualMemorySize})
+				} else {
+					get_value := GetMemValue(i, str, num, data)
+					if !get_value && NotContainsString(time_items, data.Time[i]) {
+						items = append(items, opts.LineData{Value: 0})
+					}
+				}
+				time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+				i++
+			} else {
+				break
+			}
+		}
+	}
+	if note == "rss" {
+		for {
+			if i < len(data.ProcessInfo) {
+				if data.ProcessInfo[i].MemoryCmd == str {
+					items = append(items, opts.LineData{Value: data.ProcessInfo[i].ResidentSetSize})
+				} else {
+					get_value := GetMemValue(i, str, num, data)
+					if !get_value && NotContainsString(time_items, data.Time[i]) {
+						items = append(items, opts.LineData{Value: 0})
+					}
+				}
+				time_items = append(time_items, opts.LineData{Value: data.Time[i]})
+				i++
+			} else {
+				break
+			}
+		}
 	}
 	return items
 }

@@ -5,13 +5,13 @@ const (
 )
 
 type ProcessInformation struct {
-	MemoryPercentage                   float32
+	MemoryPercentage                   float64
 	VirtualMemorySize, ResidentSetSize int
 	MemoryCmd                          string
 	MemoryPid                          string
 }
 
 type MemoryInformation struct {
-	Time        string
+	Time        []string
 	ProcessInfo []ProcessInformation
 }

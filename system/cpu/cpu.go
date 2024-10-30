@@ -3,19 +3,13 @@ package cpu
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 )
-
-func GetCpuInformation(file string, models []string, counts int) CpuInformation {
-	var r CpuInformation
-	getCpuRateAndRateAndCpuCore(&r, file, counts)
-	getModelsCpuInfomation(&r, models)
-	return r
-}
 
 func stringToFloat64(str string) float64 {
 	b2, _ := strconv.ParseFloat(str, 32)
@@ -28,35 +22,60 @@ func StringToUint8(str string) uint8 {
 	if err != nil {
 		return 0
 	}
-
-	// 检查数值是否在 uint8 的范围内
 	if i < 0 || i > 255 {
 		return 0
-		// 转换为 uint8 并返回
 	}
 	return uint8(i)
-
 }
 
-func getModelsCpuInfomation(r *CpuInformation, models []string) {
+func checkCpuProcess(processname, filename string) bool {
 
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return false
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		fmt.Println("Error reading file:", err)
+		return false
+	}
+	fileContent := string(data)
+
+	return strings.Contains(fileContent, processname)
 }
 
-func getCpuRateAndRateAndCpuCore(r *CpuInformation, file string, counts int) {
+func GetCpuInformation(file string, models []string, counts int) CpuInformation {
+	var r CpuInformation
 	file_buf, err := os.Open(file)
 	if err != nil {
 		fmt.Println("open file failed:", err)
 	}
 	defer file_buf.Close()
+
 	reader := bufio.NewReader(file_buf)
 	currentUser, err := os.Hostname()
 	if err != nil {
 		fmt.Println("Error getting current user:", err)
 	}
+
 	rate := regexp.MustCompile(`Freq Avg ([\d\.]+) GHz`)
 	loadavg := regexp.MustCompile(`Load Avg ([0-9]+\.[0-9]+) ([0-9]+\.[0-9]+) ([0-9]+\.[0-9]+)`)
 	core := regexp.MustCompile(`(\d+) CPUs`)
+	var isExistProcess, values []string
 
+	for _, process := range models {
+		if checkCpuProcess(process, file) {
+			isExistProcess = append(isExistProcess, process)
+		}
+	}
+	for i := 0; i < len(isExistProcess); i++ {
+		r.ProcessInfo = append(r.ProcessInfo, ProcessInformation{
+			Name: isExistProcess[i],
+		})
+	}
 	for i := 0; i < counts; i++ {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -86,5 +105,21 @@ func getCpuRateAndRateAndCpuCore(r *CpuInformation, file string, counts int) {
 			core_real := strings.Split(core_r, " ")[0]
 			r.CpuCore = append(r.CpuCore, StringToUint8(core_real))
 		}
+		for index, _process := range isExistProcess {
+			if strings.Contains(line, _process) {
+				re := regexp.MustCompile(`:\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)`)
+				match := re.FindStringSubmatch(line)
+				// fmt.Println(match)
+				if len(match) > 1 {
+					values = match[1:]
+				}
+				if _process == r.ProcessInfo[index].Name {
+					r.ProcessInfo[index].CpuUse = append(r.ProcessInfo[index].CpuUse, stringToFloat64(values[0]))
+					r.ProcessInfo[index].UserUse = append(r.ProcessInfo[index].UserUse, stringToFloat64(values[1]))
+					r.ProcessInfo[index].SystemUse = append(r.ProcessInfo[index].SystemUse, stringToFloat64(values[2]))
+				}
+			}
+		}
 	}
+	return r
 }
