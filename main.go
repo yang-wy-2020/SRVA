@@ -6,17 +6,17 @@ import (
 	"os"
 	"os/user"
 
-	_cpu "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/cpu"
-	_disk "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/disk"
-	_io "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/io"
-	_memory "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/memory"
-	_network "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/network"
-	_sar "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/sar"
-	_time "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/time"
-	_tools "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/tools"
+	_cpu "github.com/yang-wy-2020/SRVA/system/cpu"
+	_disk "github.com/yang-wy-2020/SRVA/system/disk"
+	_io "github.com/yang-wy-2020/SRVA/system/io"
+	_memory "github.com/yang-wy-2020/SRVA/system/memory"
+	_network "github.com/yang-wy-2020/SRVA/system/network"
+	_sar "github.com/yang-wy-2020/SRVA/system/sar"
+	_time "github.com/yang-wy-2020/SRVA/system/time"
+	_tools "github.com/yang-wy-2020/SRVA/system/tools"
 )
 
-const cfg string = "/opt/qomolo/utils/qomolo-system-analysis/cfg/config.json"
+const cfg string = "./cfg/.config.json"
 
 var _system _tools.System
 

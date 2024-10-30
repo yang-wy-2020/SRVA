@@ -1,4 +1,4 @@
-module gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis
+module github.com/yang-wy-2020/SRVA
 go 1.20
 
 require (

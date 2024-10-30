@@ -1,13 +1,13 @@
 package tools
 
 import (
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/cpu"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/disk"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/io"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/memory"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/network"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/sar"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/time"
+	"github.com/yang-wy-2020/SRVA/system/cpu"
+	"github.com/yang-wy-2020/SRVA/system/disk"
+	"github.com/yang-wy-2020/SRVA/system/io"
+	"github.com/yang-wy-2020/SRVA/system/memory"
+	"github.com/yang-wy-2020/SRVA/system/network"
+	"github.com/yang-wy-2020/SRVA/system/sar"
+	"github.com/yang-wy-2020/SRVA/system/time"
 )
 
 const (

@@ -15,13 +15,13 @@ import (
 	"github.com/go-echarts/go-echarts/v2/charts"
 	"github.com/go-echarts/go-echarts/v2/opts"
 	"github.com/go-echarts/go-echarts/v2/types"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/cpu"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/disk"
-	_io "gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/io"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/memory"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/network"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/sar"
-	"gitlab.qomolo.com/xiangyang.chen/qomolo-system-analysis/system/time"
+	"github.com/yang-wy-2020/SRVA/system/cpu"
+	"github.com/yang-wy-2020/SRVA/system/disk"
+	_io "github.com/yang-wy-2020/SRVA/system/io"
+	"github.com/yang-wy-2020/SRVA/system/memory"
+	"github.com/yang-wy-2020/SRVA/system/network"
+	"github.com/yang-wy-2020/SRVA/system/sar"
+	"github.com/yang-wy-2020/SRVA/system/time"
 )
 
 func ReadConfig(_config string) Data {
