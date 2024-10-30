@@ -2,13 +2,6 @@
 
 > analysis system load status
 
-## necessary path
-```bash
-necessary_path="/data/tmp/"
-if [ ! -d ${necessary_path} ];then
-    mkdir -p ${necessary_path}
-fi 
-```
 
 ## Description
 ```bash
@@ -47,6 +40,14 @@ args1:
         - cpu total view 
     network
         - network card view
+    memory
+        - memory view
+    disk
+        - memory view
+    disk
+        - disk view
+    all 
+        - all resource view
     edit
         - edit config
 e.g.
